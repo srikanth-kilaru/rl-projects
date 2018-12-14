@@ -6,7 +6,7 @@ Northwestern University (Fall 2018)
 ## Overview
 This README covers the software implementation aspects of my capstone project.
 Please see my [portfolio page](https://srikanth-kilaru.github.io/projects/2018/final-proj-RL) for more details about the project.
-The source code for the PG agent implementation is based upon the skeleton code provided as part of the [UC Berkeley course on RL taught in Fall 2018](http://rail.eecs.berkeley.edu/deeprlcourse/static/homeworks/hw2.pdf)
+The source code for the PG agent implementation and the policy logging utility is based upon the skeleton code provided as part of the [UC Berkeley course on RL taught in Fall 2018](http://rail.eecs.berkeley.edu/deeprlcourse/static/homeworks/hw2.pdf)
 
 ## Software Design
 The main parts of the software implementation are -
@@ -25,7 +25,7 @@ The interface between the agent and the Sawyer ROS environment is exactly the sa
 
 'step()' function to execute a new policy action and which returns new observations, calculated rewards and the done flag
 
-'reset()' function invoked at the beginning of every new trajectory rollout,  which makes Sawyer return to initial condition and selection of a new goal from the specified list.
+'reset()' function invoked at the beginning of every new trajectory rollout,  which resets Sawyer to initial condition and picks a new goal from the specified list.
 
 A simple simulator is also implemented in the ros_env.py file which can be used by specifying the --sim flag during training and testing. NOTE: The simulator mode works only for velocity control mode.
 
