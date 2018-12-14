@@ -15,7 +15,7 @@ The main parts of the software implementation are -
 
 2.> Environment code (in ros_env.py) where the observations are gathered, rewards are calculated and new actions are implemented
 
-3.> Test code where the learnt policy is executed either until the goal is reached or for a fixed duration, i.e. the length of the trajectory used during training
+3.> Test code (in pg_test.py) where the learnt policy is executed either until the goal is reached or for a fixed duration, i.e. the length of the trajectory used during training
 
 4.> Initialization parameters (in init.yaml file) such as different hyper-parameters like trajectory length, batch size, gamma, learning rate, size of neural network, and environment settings like joints to be manipulated while training, goal locations, velocity or torque mode of control etc. are defined
 
