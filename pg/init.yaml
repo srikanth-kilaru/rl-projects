@@ -1,0 +1,31 @@
+gamma: 0.9
+n_iter: 100
+learning_rate: 0.005
+reward_to_go: True
+normalize_advantages: True
+seed: 3
+n_experiments: 1
+nn_baseline: True
+n_layers: 2
+size: 64
+max_path_length: 800
+min_timesteps_per_batch: 4800
+
+distance_thresh: 0.02
+vel_limit: 0.4
+torque_limit: 0.5
+vel_mode: "raw"
+max_training_goals: 2 
+goal_angles: [[1.5, 1.5, 1.5], [-1.6, 1.6, 1.6]]
+test_goal: [-1.6, 1.6, 1.6]
+cmd_names:  ['right_j3', 'right_j4', 'right_j5']
+cmd_mode: "VELOCITY_MODE"
+initial-position: [1.59, -3.0, 1.59, 0.0, 0.0, 0.0, 0.0, 0.0]
+jnt_init_limits: [[-0.1, 0.1], [-0.1, 0.1], [-0.1, 0.1]]
+jnt_pos_limits: [[-2.2, 2.2], [-2.5, 2.5], [-2.2, 2.2]]
+
+jnt_obs_dim: 3
+act_dim: 3 
+goal_obs_dim: 6
+jnt_indices: [3, 4, 5]
+debug_lvl: "All"
