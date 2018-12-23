@@ -527,15 +527,15 @@ class Env(object):
 
     def _set_random_training_goal(self):
         k = self.goal_cntr
-        self.goal_pos_x1 = self.goal_XYZs[k][0][0]
-        self.goal_pos_y1 = self.goal_XYZs[k][0][1]
-        self.goal_pos_z1 = self.goal_XYZs[k][0][2]
-        self.goal_pos_x2 = self.goal_XYZs[k][1][0]
-        self.goal_pos_y2 = self.goal_XYZs[k][1][1]
-        self.goal_pos_z2 = self.goal_XYZs[k][1][2]
-        self.goal_pos_x3 = self.goal_XYZs[k][2][0]
-        self.goal_pos_y3 = self.goal_XYZs[k][2][1]
-        self.goal_pos_z3 = self.goal_XYZs[k][2][2]
+        self.goal_pos_x1 = self.goal_XYZs[k][0][0] + np.random.normal(0, 1) 
+        self.goal_pos_y1 = self.goal_XYZs[k][0][1] + np.random.normal(0, 1)
+        self.goal_pos_z1 = self.goal_XYZs[k][0][2] + np.random.normal(0, 1)
+        self.goal_pos_x2 = self.goal_XYZs[k][1][0] + np.random.normal(0, 1)
+        self.goal_pos_y2 = self.goal_XYZs[k][1][1] + np.random.normal(0, 1)
+        self.goal_pos_z2 = self.goal_XYZs[k][1][2] + np.random.normal(0, 1)
+        self.goal_pos_x3 = self.goal_XYZs[k][2][0] + np.random.normal(0, 1)
+        self.goal_pos_y3 = self.goal_XYZs[k][2][1] + np.random.normal(0, 1)
+        self.goal_pos_z3 = self.goal_XYZs[k][2][2] + np.random.normal(0, 1)
            
     def _sim_integrate_action(self, action):
         obs = self.dt*action
