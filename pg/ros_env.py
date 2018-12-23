@@ -79,12 +79,20 @@ class Env(object):
             logfile = os.path.join(self.logpath, "ros_env.log")
             self.logp = open(logfile, "w")
 
-        self.goal_pos_x = None
-        self.goal_pos_y = None
-        self.goal_pos_z = None
+        
+        # Goal does not move and is specified by three points (for pose reasons)
+        self.goal_pos_x1 = None
+        self.goal_pos_y1 = None
+        self.goal_pos_z1 = None
+        self.goal_pos_x2 = None
+        self.goal_pos_y2 = None
+        self.goal_pos_z2 = None
+        self.goal_pos_x3 = None
+        self.goal_pos_y3 = None
+        self.goal_pos_z3 = None
+        
         # dt - time step used for simulation
         self.dt = 0.1
-        self.goal_angles = None
         self._load_inits(path)
         self.cur_obs = np.zeros(self.obs_dim)
         self.cur_act = np.zeros(self.act_dim)
@@ -94,19 +102,6 @@ class Env(object):
         self.limb = Limb()
         self.all_jnts = copy.copy(self.limb.joint_names())
         self.limb.set_joint_position_speed(0.2)
-        
-        if self.goal_angles is None:
-            self.goal_angles = np.zeros((self.max_training_goals,
-                                         len(self.jnt_indices)), np.float64)
-            for goal in range(self.max_training_goals):
-                for i in range(len(self.jnt_indices)):
-                    l_limit = self.jnt_init_limits[i][0]
-                    u_limit = self.jnt_init_limits[i][1]
-                    val = np.random.uniform(l_limit, u_limit)
-                    self.goal_angles[goal][i] = val
-                    
-            string = " Goal angles are: " + str(self.goal_angles)
-            self._print_env_log(string)
 
         self.robot = URDF.from_parameter_server()
         self.kdl_kin_r = KDLKinematics(self.robot, 'base',
@@ -123,18 +118,37 @@ class Env(object):
             self.jnt_cm_pub = rospy.Publisher('/robot/limb/right/joint_command',
                                               JointCommand, queue_size=None)
         
-        '''
-        self.jnt_ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
-                                           EndpointState,
-                                           self.update_ee_pose,
-                                           queue_size=1)
-        self.obj_pose = PoseStamped()
-        self.obj_pose.header.frame_id = "right_gripper_base"
-        self.obj_pose.pose.position.z = self.obj_z_offset
+            self.jnt_ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
+                                               EndpointState,
+                                               self.update_ee_pose,
+                                               queue_size=1)
 
+        '''
+        Three points on the object in "right_gripper_base" frame.
+        Obect is static in gripper frame. Needs to be calculated only once
+        during init time
+        '''
+        self.obj_pose1 = PoseStamped()
+        self.obj_pose1.header.frame_id = "right_gripper_base"
+        self.obj_pose1.pose.position.x = self.obj_x1
+        self.obj_pose1.pose.position.y = self.obj_y1
+        self.obj_pose1.pose.position.z = self.obj_z1
+
+        self.obj_pose2 = PoseStamped()
+        self.obj_pose2.header.frame_id = "right_gripper_base"
+        self.obj_pose2.pose.position.x = self.obj_x2
+        self.obj_pose2.pose.position.y = self.obj_y2
+        self.obj_pose2.pose.position.z = self.obj_z2
+
+        self.obj_pose3 = PoseStamped()
+        self.obj_pose3.header.frame_id = "right_gripper_base"
+        self.obj_pose3.pose.position.x = self.obj_x3
+        self.obj_pose3.pose.position.y = self.obj_y3
+        self.obj_pose3.pose.position.z = self.obj_z3
+        
         self.tf_buffer = tf2_ros.Buffer()    
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-        '''        
+
 
     '''
     All members of the observation vector have to be provided
@@ -213,17 +227,28 @@ class Env(object):
         self.cmd_names = config['cmd_names']
         self.init_pos = config['initial-position']
         self.goal_obs_dim = config['goal_obs_dim']
-        # In TORQUE_MODE, jnt_obs_dim will be twice the size of the
-        # number of joints being controlled (2 * self.act_dim), one each for
-        # position and velocity. The ordering in the observation vector is:
-        # j0:pos, j1:pos, ..., j0:vel, j1:vel ...., obj_coord:x, obj_coord:y,
-        # obj_coord:z, goal_coord:x, goal_coord:y, goal_coord:z,
+        '''
+        In TORQUE_MODE, jnt_obs_dim will be twice the size of the
+        number of joints being controlled (2 * self.act_dim), one each for
+        position and velocity. 
+        The ordering in the observation vector is:
+        j0:pos, j1:pos, ..., jN:pos,
+        j0:vel, j1:vel ...., jN:vel, # Applicable only in torque mode
+        obj_coord:x1, obj_coord:y1, obj_coord:z1, 
+        obj_coord:x2, obj_coord:y2, obj_coord:z2,
+        obj_coord:x3, obj_coord:y3, obj_coord:z3; 
+        goal_coord:x1, goal_coord:y1, goal_coord:z1,
+        goal_coord:x2, goal_coord:y2, goal_coord:z2,
+        goal_coord:x3, goal_coord:y3, goal_coord:z3
+        '''
         self.jnt_obs_dim = config['jnt_obs_dim']
         self.obs_dim = self.goal_obs_dim + self.jnt_obs_dim
         self.act_dim = config['act_dim']
-        # these indices have to be in ascending order
-        # the length of this ascending order list >=1 and <=7 (values 0 to 6)
-        # The last joint is the gripper finger joint and stays fixed
+        '''
+        These indices have to be in ascending order
+        The length of this ascending order list >=1 and <=7 (values 0 to 6)
+        The last joint is the gripper finger joint and stays fixed
+        '''
         self.jnt_indices = config['jnt_indices']
         self.vel_limit = config['vel_limit']
         self.torque_limit = config['torque_limit']
@@ -232,17 +257,25 @@ class Env(object):
         self.test_goal =  config['test_goal']
         self.max_training_goals = config['max_training_goals']
         self.batch_size = config['min_timesteps_per_batch']
-        # goal_angles have to be in ascending order of joint number
-        # goal angles are a list of ordered goal angles
-        self.goal_angles = config['goal_angles']
-        string = " Goal angles are: " + str(self.goal_angles)
-        self._print_env_log(string)
+        self.goal_XYZs = config['goal_XYZs']
+        '''
+        The following 9 object coordinates are in "right_gripper_base" frame
+        They are relayed by the camera observer at init time.
+        They can be alternatively read from the init.yaml file too
+        '''
+        self.obj_x1 = config['obj_x1']
+        self.obj_y1 = config['obj_y1']
+        self.obj_z1 = config['obj_z1']
+        self.obj_x2 = config['obj_x2']
+        self.obj_y2 = config['obj_y2']
+        self.obj_z2 = config['obj_z2']
+        self.obj_x3 = config['obj_x3']
+        self.obj_y3 = config['obj_y3']`
+        self.obj_z3 = config['obj_z3']
         
-    '''
     # Callback invoked when EE pose update message is received
     # This function will update the pose of object in gripper
     def update_ee_pose(self, msg):
-    
         try:
             tform = self.tf_buffer.lookup_transform("base",
                                                     "right_gripper_base",
@@ -253,31 +286,45 @@ class Env(object):
             self._print_env_log("TF Exception, not storing update")
             return
 
+        obs = self._get_cur_obs()
+
         trans = (tform.transform.translation.x, tform.transform.translation.y, tform.transform.translation.z)
         rot = (tform.transform.rotation.x, tform.transform.rotation.y, tform.transform.rotation.z, tform.transform.rotation.w)
         mat44 = np.dot(transformations.translation_matrix(trans),
                        transformations.quaternion_matrix(rot))
-        pose44 = np.dot(xyz_to_mat44(self.obj_pose.pose.position),
-                        xyzw_to_mat44(self.obj_pose.pose.orientation))
+
+        pose44 = np.dot(xyz_to_mat44(self.obj_pose1.pose.position),
+                        xyzw_to_mat44(self.obj_pose1.pose.orientation))
         txpose = np.dot(mat44, pose44)
         xyz = tuple(transformations.translation_from_matrix(txpose))[:3]
-        quat = tuple(transformations.quaternion_from_matrix(txpose))
         x, y, z = xyz
 
-        self.cur_obs[self.jnt_obs_dim] = x 
-        self.cur_obs[self.jnt_obs_dim+1] = y 
-        self.cur_obs[self.jnt_obs_dim+2] = z 
-        
-        string = "Obj position: " + str(xyz) 
-        #self._print_env_log(string)
-    '''
+        obs[self.jnt_obs_dim]   = x 
+        obs[self.jnt_obs_dim+1] = y 
+        obs[self.jnt_obs_dim+2] = z 
 
-    '''
-    The _update_obj_coords fn will update
-    self.cur_obs[self.jnt_obs_dim],
-    self.cur_obs[self.jnt_obs_dim+1],
-    self.cur_obs[self.jnt_obs_dim+2]
-    '''
+        pose44 = np.dot(xyz_to_mat44(self.obj_pose2.pose.position),
+                        xyzw_to_mat44(self.obj_pose2.pose.orientation))
+        txpose = np.dot(mat44, pose44)
+        xyz = tuple(transformations.translation_from_matrix(txpose))[:3]
+        x, y, z = xyz
+
+        obs[self.jnt_obs_dim+3] = x 
+        obs[self.jnt_obs_dim+4] = y 
+        obs[self.jnt_obs_dim+5] = z 
+
+        pose44 = np.dot(xyz_to_mat44(self.obj_pose3.pose.position),
+                        xyzw_to_mat44(self.obj_pose3.pose.orientation))
+        txpose = np.dot(mat44, pose44)
+        xyz = tuple(transformations.translation_from_matrix(txpose))[:3]
+        x, y, z = xyz
+
+        obs[self.jnt_obs_dim+6] = x 
+        obs[self.jnt_obs_dim+7] = y 
+        obs[self.jnt_obs_dim+8] = z 
+
+        self._set_cur_obs(obs)
+        
     def _update_obj_coords(self, q_jnt_angles):
         # forward kinematics (returns homogeneous 4x4 numpy.mat)
         pose_r = self.kdl_kin_r.forward(q_jnt_angles)
@@ -288,39 +335,26 @@ class Env(object):
         return x, y, z
         
     def _update_jnt_state(self, msg):
-        # only care for mesgs which have length 9
-        # there is a length 1 message for the gripper finger joint
-        # which we dont care about
+        '''
+        Only care for mesgs which have length 9
+        There is a length 1 message for the gripper finger joint
+        which we dont care about
+        '''
         if len(msg.position) != 9:
             return
         
-        # the 9 joints are head_pan, j0 - j6, torso in this order
-        q_jnt_angles = copy.copy(self.init_pos)
-        q_jnt_angles[:7] = msg.position[1:8]
-
-        n_jnts = self.jnt_obs_dim/2
         obs = self._get_cur_obs()
         enum_iter = enumerate(self.jnt_indices, start=0)
         for i, index in enum_iter:
-            # need to add a 1 to message index as it starts from head_pan
-            # [head_pan, j0, j1, .. torso]
-            # whereas joint_indices are starting from j0
+            '''
+            Need to add a 1 to message index as it starts from head_pan
+            [head_pan, j0, j1, .. torso]
+            whereas joint_indices are starting from j0
+            '''
             obs[i] = msg.position[index+1]
             if self.cmd_mode == "TORQUE_MODE":
-                obs[i + n_jnts] = msg.velocity[index+1]
+                obs[i + self.jnt_obs_dim/2] = msg.velocity[index+1]
 
-        '''
-        Store all the joint angles received j0 - j6 so that we can 
-        calculate the most accurate object (in gripper) location using FK
-        Otherwise the drift in the 'fixed' joint angles over training time 
-        can significantly affect results
-        '''
-        # Update the coordinates of the object in the gripper
-        # using FK based on latest version of observed angles
-        x, y, z = self._update_obj_coords(q_jnt_angles)
-        obs[self.jnt_obs_dim]   = x
-        obs[self.jnt_obs_dim+1] = y
-        obs[self.jnt_obs_dim+2] = z
         self._set_cur_obs(obs)
         
     '''
@@ -331,6 +365,7 @@ class Env(object):
         q_jnt_angles = copy.copy(self.init_pos)
         
         if self.sim_mode:
+            '''
             enum_iter = enumerate(self.jnt_indices, start=0)
             obs = self._get_cur_obs()
             for i, index in enum_iter:
@@ -350,7 +385,7 @@ class Env(object):
             string = str(self.init_pos)
             self._print_env_log("Initializing joint states to " + string)
             return # its a sim, no need to send ROS messages
-        
+            '''
         # Command Sawyer's joints to pre-set angles and velocity
         # JointCommand.msg mode: TRAJECTORY_MODE
         positions = dict()
@@ -433,6 +468,7 @@ class Env(object):
         self.cur_act = copy.deepcopy(action)
         
         if self.sim_mode:
+            '''
             # NOTE: sim_mode only supports velocity and not torque control mode
             # Usage of sim_mode in torque control mode will lead to garbage
 
@@ -450,6 +486,7 @@ class Env(object):
             obs[self.jnt_obs_dim+1] = y
             obs[self.jnt_obs_dim+2] = z
             self._set_cur_obs(obs)
+            '''
         else:
             # called to take a step with the provided action
             # send the action as generated by policy (clip before sending)
@@ -477,30 +514,28 @@ class Env(object):
         self.cur_reward = self._calc_reward(diff, done)
         return obs, self.cur_reward, done
 
-    def _set_cartesian_goal(self, q_jnt_angles):
-        pose_r = self.kdl_kin_r.forward(q_jnt_angles)
-        pose_l = self.kdl_kin_l.forward(q_jnt_angles)
-        pose = 0.5*(pose_l + pose_r)
-        x, y, z = transformations.translation_from_matrix(pose)[:3]
-    
-        self.goal_pos_x = x
-        self.goal_pos_y = y
-        self.goal_pos_z = z
+    def _set_cartesian_test_goal(self):    
+        self.goal_pos_x1 = self.test_goal[0][0]
+        self.goal_pos_y1 = self.test_goal[0][1]
+        self.goal_pos_z1 = self.test_goal[0][2]
+        self.goal_pos_x1 = self.test_goal[1][0]
+        self.goal_pos_y1 = self.test_goal[1][1]
+        self.goal_pos_z1 = self.test_goal[1][2]
+        self.goal_pos_x1 = self.test_goal[2][0]
+        self.goal_pos_y1 = self.test_goal[2][1]
+        self.goal_pos_z1 = self.test_goal[2][2]
 
     def _set_random_training_goal(self):
-        q_jnt_angles = copy.copy(self.init_pos)
-        a_str = " "
         k = self.goal_cntr
-
-        enum_iter = enumerate(self.jnt_indices, start=0)
-        for i, index in enum_iter:
-            # specify the goal in joint angles space
-            q_jnt_angles[index] = self.goal_angles[k][i] + np.random.uniform(-0.15, 0.15)
-            a_str += str(q_jnt_angles[index]) + ", "
-
-        self._set_cartesian_goal(q_jnt_angles)
-        string = "Setting training goal to: " + a_str + str(self.goal_pos_x) + ", " + str(self.goal_pos_y) + ", " + str(self.goal_pos_z)
-        self._print_env_log(string)
+        self.goal_pos_x1 = self.goal_XYZs[k][0][0]
+        self.goal_pos_y1 = self.goal_XYZs[k][0][1]
+        self.goal_pos_z1 = self.goal_XYZs[k][0][2]
+        self.goal_pos_x2 = self.goal_XYZs[k][1][0]
+        self.goal_pos_y2 = self.goal_XYZs[k][1][1]
+        self.goal_pos_z2 = self.goal_XYZs[k][1][2]
+        self.goal_pos_x3 = self.goal_XYZs[k][2][0]
+        self.goal_pos_y3 = self.goal_XYZs[k][2][1]
+        self.goal_pos_z3 = self.goal_XYZs[k][2][2]
            
     def _sim_integrate_action(self, action):
         obs = self.dt*action
@@ -514,18 +549,7 @@ class Env(object):
         # set the initial joint state and send the command
         
         if not self.train_mode:
-            i = 0
-            q_jnt_angles = copy.copy(self.init_pos)
-                        
-            enum_iter = enumerate(self.jnt_indices, start=0)
-            for i, index in enum_iter:
-                #copy the goal angles of joints in play
-                q_jnt_angles[index] = self.test_goal[i]
-                print "goal_angle is {}".format(self.test_goal[i])
-
-            self._set_cartesian_goal(q_jnt_angles)
-            string = "Setting testing goal to: " + str(self.goal_pos_x) + ", " + str(self.goal_pos_y) + ", " + str(self.goal_pos_z)
-            print string
+            self._set_cartesian_test_goal()
         else:
             if self.goal_cntr == self.max_training_goals - 1:
                 self.goal_cntr = 0
@@ -535,9 +559,17 @@ class Env(object):
 
         cur_obs = self._get_cur_obs()
         # Update cur_obs with the new goal
-        cur_obs[self.jnt_obs_dim+3] = self.goal_pos_x
-        cur_obs[self.jnt_obs_dim+4] = self.goal_pos_y
-        cur_obs[self.jnt_obs_dim+5] = self.goal_pos_z
+        od = self.jnt_obs_dim
+        cur_obs[od+9]  = self.goal_pos_x1
+        cur_obs[od+10] = self.goal_pos_y1
+        cur_obs[od+11] = self.goal_pos_z1
+        cur_obs[od+12] = self.goal_pos_x2
+        cur_obs[od+13] = self.goal_pos_y2
+        cur_obs[od+14] = self.goal_pos_z2
+        cur_obs[od+15] = self.goal_pos_x3
+        cur_obs[od+16] = self.goal_pos_y3
+        cur_obs[od+17] = self.goal_pos_z3
+        
         self._set_cur_obs(cur_obs)
 
         # this call will result in sleeping for 3 seconds for non-sim env
@@ -548,9 +580,15 @@ class Env(object):
     def _get_diff (self, obs):
         od = self.jnt_obs_dim
 
-        diff = [abs(obs[od] - obs[od+3]),
-                abs(obs[od+1] - obs[od+4]),
-                abs(obs[od+2] - obs[od+5])]
+        diff = [abs(obs[od] - obs[od+9]),
+                abs(obs[od+1] - obs[od+10]),
+                abs(obs[od+2] - obs[od+11]),
+                abs(obs[od+3] - obs[od+12]),
+                abs(obs[od+4] - obs[od+13]),
+                abs(obs[od+5] - obs[od+14]),
+                abs(obs[od+6] - obs[od+15]),
+                abs(obs[od+7] - obs[od+16]),
+                abs(obs[od+8] - obs[od+17])]
 
         return diff
     
