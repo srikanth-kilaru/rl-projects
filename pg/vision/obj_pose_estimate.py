@@ -128,14 +128,18 @@ class ObjPoseEstimator(object):
             positions[jnt_name] = calib_angles[i]
 
         limb.move_to_joint_positions(positions)
-
+        print("Done Initializing joints!!")
+         
     def get_QR_coords(self):
-        # Read image
+        if len(self.verts_best) == 4:
+            # We already found the 4 vertices of the QR code,
+            # Dont waste any time with further processing
+            return
+            
+        # Image is rgb image
         im = self.rgb_img
-        
         decodedObjects = pyzbar.decode(im)
         for decodedObject in decodedObjects:
-        
             points = decodedObject.polygon
             # If the points do not form a quad, find convex hull
             if len(points) > 4 : 
@@ -143,7 +147,6 @@ class ObjPoseEstimator(object):
                 hull = list(map(tuple, np.squeeze(hull)))
             else : 
                 hull = points;
-                
                 
             # Number of points in the convex hull
             n = len(hull)
@@ -154,15 +157,17 @@ class ObjPoseEstimator(object):
             for p in hull:
                 if len(self.verts_best) != 4:
                     self.verts_best.append([p.x, p.y])
-
+                    
             print("Best vertices from QR code: ", self.verts_best)
             for verts in self.verts_best:
                 im = cv2.circle(im, (verts[0], verts[1]), 2, (255,0,0), 2)
-        
+
+            '''
             # Display results 
             cv2.imshow("QR coordinates", im)
             cv2.waitKey(3)
-        
+            '''
+            
     def find_vertices_mode(self, vertices):
         if self.verts_x is None:
             self.verts_x = np.zeros((self.n_verts, 100), dtype=int)
@@ -224,24 +229,29 @@ class ObjPoseEstimator(object):
         except CvBridgeError as e:
             print("Error :", e)
 
-        if len(self.verts_best) != self.n_verts:
+        if len(self.verts_best) != self.n_verts or len(self.XYZ) == 4:
+            # Nothing to process or we are all done processing
             return
 
-
         img = self.rgb_img
+        
+        # A helpful debug tool to plot all reasonable pixels
         for i in range(self.depthimage2.shape[0]):
             for j in range(self.depthimage2.shape[1]):
                 depth = self.depthimage2[i][j]
                 if not math.isnan(depth) and depth < 2:
                     #print(i, j, depth)
                     img = cv2.circle(img, (i, j), 2, (0,255,0), 2)
-
+        
+        # A helpful debug tool to plot all pixels of interest
         for verts in self.verts_best:
             img = cv2.circle(img, (verts[0], verts[1]), 2, (255,0,0), 2)
             depth = self.depthimage2[verts[1]][verts[0]]
             print verts[0], verts[1], depth
+
         cv2.imshow('Points', img)
         cv2.waitKey(3)
+        
     
         verts_post_depthCheck = []
         for verts in self.verts_best:
@@ -265,6 +275,7 @@ class ObjPoseEstimator(object):
         
         if len(self.XYZ) == len(self.verts_best) and len(self.XYZ) != 0:
             print 'Xr, Yr, Zr', self.XYZ
+
         
     def pcl_subscr(self, data):
         
@@ -285,9 +296,9 @@ class ObjPoseEstimator(object):
         for vert in self.verts_best:
             x_pixel = vert[0]
             y_pixel = vert[1]
-            Xc = pcl_data.point[width * y_pixel + x_pixel].x
-            Yc = pcl_data.point[width * y_pixel + x_pixel].y;
-            Zc = pcl_data.point[width * y_pixel + x_pixel].z;
+            Xc = pcl_data[width * y_pixel + x_pixel].x
+            Yc = pcl_data[width * y_pixel + x_pixel].y;
+            Zc = pcl_data[width * y_pixel + x_pixel].z;
             Xr, Yr, Zr = transform_camera2robot(Xc, Yc, Zc)
             print("Xr, Yr, Zr", Xr, Yr, Zr)                
             if len(self.XYZ) != len(self.verts_best):
@@ -402,20 +413,22 @@ def main():
     args = parser.parse_args()
 
     rospy.init_node('obj_pose_estimator')
-    print("initialized obj_pose_estimator ....")
+    print("Initialized obj_pose_estimator...")
     obs = ObjPoseEstimator(n_verts=args.verts, tune=args.tune, qr=args.qr)
     
     # Get the camera calibration parameter for the rectified image
     #     [fx'  0  cx' Tx]
     # P = [ 0  fy' cy' Ty]
     #     [ 0   0   1   0]
+    print "Waiting for Depth Camera Info..."
     msg = rospy.wait_for_message('/camera/depth/camera_info', CameraInfo, timeout=None) 
     obs.fx_d = msg.P[0]
     obs.fy_d = msg.P[5]
     obs.cx_d = msg.P[2]
     obs.cy_d = msg.P[6]
     print "Depth Camera Info", obs.fx_d, obs.fy_d, obs.cx_d, obs.cy_d
-    
+
+    print "Waiting for RGB Camera Info..."
     msg = rospy.wait_for_message('/camera/rgb/camera_info', CameraInfo, timeout=None) 
     obs.fx_c = msg.P[0]
     obs.fy_c = msg.P[5]
@@ -438,7 +451,7 @@ def main():
                                       EndpointState,
                                       obs.ee_pose,
                                       queue_size=1)
-        print "subscribed to topics ...."
+        print "Subscribed to topics!"
         rospy.spin()
     except KeyboardInterrupt:
         print("Shutting down")

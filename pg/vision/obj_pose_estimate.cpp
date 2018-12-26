@@ -14,6 +14,10 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <math.h>       /* sin */
+
+#define PI 3.14159265
+
 using namespace cv;
 using namespace std;
 using namespace zbar;
@@ -32,9 +36,9 @@ typedef struct
 
 int x_pixel[4];
 int y_pixel[4];
-long double Xc[4];
-long double Yc[4];
-long double Zc[4];
+double Xc[4];
+double Yc[4];
+double Zc[4];
 
 // Find and decode barcodes and QR codes
 void decode(cv::Mat &im, vector<decodedObject>&decodedObjects)
@@ -113,7 +117,24 @@ void display(Mat &im, vector<decodedObject>&decodedObjects)
    
 }
 
+cv::Mat transform_camera2robot(double X, double Y, double Z)
+{
+  cv::Vec<double, 4> obj_loc_kin(X, Y, Z, 1);
+  cv::Vec<double, 4> kinect_loc(0.0, 0.0, 0.6604, 1);
+   
+  double rotZ[4][4] = {{cos(PI), -sin(PI), 0, 0}, {sin(PI), cos(PI), 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
+  cv::Mat rotZ_m = cv::Mat(4, 4, CV_64FC1, rotZ);
+  double rotX[4][4] = {{1, 0, 0, 0}, {0, cos(PI/2), -sin(PI/2), 0}, {0, sin(PI/2), cos(PI/2), 0}, {0, 0, 0, 1}};
+  cv::Mat rotX_m = cv::Mat(4, 4, CV_64FC1, rotX);
+  cv::Mat R = rotX_m.mul(rotZ_m);
 
+  //do the transformation
+  cv::Mat kinect_to_sawyer = R * cv::Mat(obj_loc_kin);    
+  cv::Mat sawyer_to_obj = kinect_to_sawyer +  cv::Mat(kinect_loc);
+  
+  return (sawyer_to_obj);
+}
+  
 void pcl_imageCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 {
   //ROS_INFO("Cloud Time Stamp: %f", cloud_msg->header.stamp.toSec());
@@ -126,6 +147,7 @@ void pcl_imageCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
   //pcl::fromROSMsg(*cloud_msg, *temp_cloud);
 
   int i;
+  int good_cnt = 0;
   std::stringstream buffer;
   for (i = 0; i < 4; i++) {
     Xc[i] = temp_cloud->points[WIDTH * y_pixel[i] + x_pixel[i]].x;
@@ -137,6 +159,24 @@ void pcl_imageCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     buffer << "for x_pixel, y_pixel: ";
     buffer << "(" << x_pixel[i] << ", " << y_pixel[i] << ")" << endl;
     cout << buffer.str();
+    if (!isnan(Xc[i]) && !isnan(Yc[i]) && !isnan(Zc[i]))
+      good_cnt++;
+    if (good_cnt >= 3) {
+      cout << "found good coordinates!!!!!!!!" << good_cnt << endl;
+      ofstream filep;
+      int k;
+      cv::Mat robot_coords;
+      
+      filep.open("good-coords.txt");
+      for (k = 0; k < 4; k++) {
+	if (!isnan(Xc[k]) && !isnan(Yc[k]) && !isnan(Zc[k])) {
+	  robot_coords = transform_camera2robot(Xc[k], Yc[k], Zc[k]);
+	  //filep << Xc[k] << ", " << Yc[k] << ", " << Zc[k] << endl;
+	  filep << robot_coords.at<double>(0,1) << ", " << robot_coords.at<double>(1,1) << ", " << robot_coords.at<double>(2,1) << endl;
+	}
+      }
+      filep.close();
+    }
   }
 }
 
