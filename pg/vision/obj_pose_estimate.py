@@ -41,6 +41,9 @@ from numpy import sin
 from numpy import pi
 import copy
 import pyzbar.pyzbar as pyzbar
+import pcl
+from sensor_msgs.msg import PointCloud2
+import sensor_msgs.point_cloud2 as pc2
 
 def nothing(x):
     pass
@@ -111,6 +114,21 @@ class ObjPoseEstimator(object):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
         self.initialize_jnts()
 
+    def initialize_jnts(self):
+        print("Initializing joints...")
+        positions = dict()
+        limb = Limb()
+        calib_angles = [0.27, -3.27, 3.04, -1.60, -0.38, -1.66, 0.004]
+        all_jnts = copy.copy(limb.joint_names())
+        limb.set_joint_position_speed(0.2)
+        positions['head_pan'] = 0.0
+
+        enum_iter = enumerate(all_jnts, start=0)        
+        for i, jnt_name in enum_iter:
+            positions[jnt_name] = calib_angles[i]
+
+        limb.move_to_joint_positions(positions)
+
     def get_QR_coords(self):
         # Read image
         im = self.rgb_img
@@ -137,27 +155,14 @@ class ObjPoseEstimator(object):
                 if len(self.verts_best) != 4:
                     self.verts_best.append([p.x, p.y])
 
-            print self.verts_best
-
-        # Display results 
-        #cv2.imshow("Results", im)
-        #cv2.waitKey(3)
+            print("Best vertices from QR code: ", self.verts_best)
+            for verts in self.verts_best:
+                im = cv2.circle(im, (verts[0], verts[1]), 2, (255,0,0), 2)
         
-    def initialize_jnts(self):
-        print("Initializing joints...")
-        positions = dict()
-        limb = Limb()
-        calib_angles = [0.27, -3.27, 3.04, -1.60, -0.38, -1.66, 0.004]
-        all_jnts = copy.copy(limb.joint_names())
-        limb.set_joint_position_speed(0.2)
-        positions['head_pan'] = 0.0
-
-        enum_iter = enumerate(all_jnts, start=0)        
-        for i, jnt_name in enum_iter:
-            positions[jnt_name] = calib_angles[i]
-
-        limb.move_to_joint_positions(positions)
-
+            # Display results 
+            cv2.imshow("QR coordinates", im)
+            cv2.waitKey(3)
+        
     def find_vertices_mode(self, vertices):
         if self.verts_x is None:
             self.verts_x = np.zeros((self.n_verts, 100), dtype=int)
@@ -236,7 +241,6 @@ class ObjPoseEstimator(object):
             depth = self.depthimage2[verts[1]][verts[0]]
             print verts[0], verts[1], depth
         cv2.imshow('Points', img)
-        #cv2.imshow('Depth image', self.depthimage)
         cv2.waitKey(3)
     
         verts_post_depthCheck = []
@@ -262,7 +266,34 @@ class ObjPoseEstimator(object):
         if len(self.XYZ) == len(self.verts_best) and len(self.XYZ) != 0:
             print 'Xr, Yr, Zr', self.XYZ
         
+    def pcl_subscr(self, data):
         
+        if len(self.verts_best) != self.n_verts:
+            return
+        
+        print("pcl_subscr: Best vertices populated!")
+        points_list = []
+        for p in pc2.read_points(data, skip_nans=True):
+            points_list.append([p[0], p[1], p[2], p[3]])
+            print p[0], p[1], p[2], p[3]
+        pcl_data = pcl.PointCloud_PointXYZRGB()
+        pcl_data.from_list(points_list)
+        '''
+        for pd in pcl_data:
+            print pd
+        width = 640
+        for vert in self.verts_best:
+            x_pixel = vert[0]
+            y_pixel = vert[1]
+            Xc = pcl_data.point[width * y_pixel + x_pixel].x
+            Yc = pcl_data.point[width * y_pixel + x_pixel].y;
+            Zc = pcl_data.point[width * y_pixel + x_pixel].z;
+            Xr, Yr, Zr = transform_camera2robot(Xc, Yc, Zc)
+            print("Xr, Yr, Zr", Xr, Yr, Zr)                
+            if len(self.XYZ) != len(self.verts_best):
+                self.XYZ.append([Xr, Yr, Zr])
+        '''
+                
     def rgb_image_subscr(self, data):
         try:
             self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
@@ -317,9 +348,6 @@ class ObjPoseEstimator(object):
         perimeter = 0.01*cv2.arcLength(cnt, True)
         vertices = cv2.approxPolyDP(hull, perimeter, True)
         
-        if self.once:
-            print vertices
-
         if len(vertices) == self.n_verts:
             self.find_vertices_mode(vertices)
         cv2.drawContours(self.rgb_img, [hull], -1, (0, 255, 0), 3)
@@ -386,22 +414,26 @@ def main():
     obs.fy_d = msg.P[5]
     obs.cx_d = msg.P[2]
     obs.cy_d = msg.P[6]
-    print(obs.fx_d, obs.fy_d, obs.cx_d, obs.cy_d)
-
+    print "Depth Camera Info", obs.fx_d, obs.fy_d, obs.cx_d, obs.cy_d
+    
     msg = rospy.wait_for_message('/camera/rgb/camera_info', CameraInfo, timeout=None) 
     obs.fx_c = msg.P[0]
     obs.fy_c = msg.P[5]
     obs.cx_c = msg.P[2]
     obs.cy_c = msg.P[6]
-    print(obs.fx_c, obs.fy_c, obs.cx_c, obs.cy_c)
+    print "RGB Camera Info", obs.fx_c, obs.fy_c, obs.cx_c, obs.cy_c
     
     try:
+        
         obs.rgb_sub = rospy.Subscriber("/camera/rgb/image_raw",
                                        Image, obs.rgb_image_subscr)
-        
+
         obs.dr_sub = rospy.Subscriber("/camera/depth_registered/image_raw",
                                       Image, obs.depth_registered_subscr)
-
+        '''
+        obs.pcl_sub = rospy.Subscriber("/camera/depth_registered/points",
+                                       PointCloud2, obs.pcl_subscr)
+        '''
         obs.ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
                                       EndpointState,
                                       obs.ee_pose,
