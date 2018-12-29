@@ -1,0 +1,40 @@
+gamma: 0.9
+n_iter: 100
+learning_rate: 0.01
+reward_to_go: True
+normalize_advantages: True
+seed: 3
+n_experiments: 1
+nn_baseline: True
+n_layers: 2
+size: 64
+max_path_length: 800
+min_timesteps_per_batch: 5600
+num_target_updates: 10
+num_grad_steps_per_target_update: 10
+
+distance_thresh: 0.009
+torque_limit: 0.5
+max_training_goals: 4
+goal_XYZs: [[[0.74769, -0.27182, 0.59078], [0.76764, -0.24942, 0.59024], [0.74528, -0.22947, 0.59172]], [[0.68179, 0.20227, -0.05935], [0.68274, 0.23225, -0.05987], [0.65300, 0.23326, -0.05604]], [[-0.68757, 0.04419, -0.02451], [-0.70766, 0.02214, -0.02764], [-0.68546, 0.00196, -0.02794]], [[-0.89162, 0.20552, 0.49433,], [-0.86202, 0.20932, 0.49119], [-0.86552, 0.23897, 0.49409]]]
+
+obj_x1: 0.015
+obj_y1: 0.015
+obj_z1: 0.14
+obj_x2: 0.015
+obj_y2: -0.015
+obj_z2: 0.14
+obj_x3: -0.015
+obj_y3: -0.015
+obj_z3: 0.14
+
+cmd_names:  ['right_j0', 'right_j1', 'right_j2', 'right_j3', 'right_j4', 'right_j5', 'right_j6']
+cmd_mode: "TORQUE_MODE"
+initial-position: [1.59, -3.0, 1.59, 0.0, 0.0, 0.0, 0.0, 0.0]
+jnt_init_limits: [[-0.1, 0.1], [-0.1, 0.1], [-0.1, 0.1], [-0.1, 0.1], [-0.1, 0.1], [-0.1, 0.1], [-0.1, 0.1]]
+
+jnt_obs_dim: 14
+act_dim:  7
+goal_obs_dim: 18
+jnt_indices: [0, 1, 2, 3, 4, 5, 6]
+debug_lvl: "All"

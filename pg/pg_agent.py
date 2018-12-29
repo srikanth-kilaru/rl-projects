@@ -8,15 +8,9 @@
 # srikanthkilaru2018@u.northwestern.edu
 ##########################################
 import sys
-import rospy
-import roslib
-import cv2
 import os
 import glob
 from math import ceil
-from std_msgs.msg import String
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge, CvBridgeError
 import argparse
 import actionlib
 import imutils
@@ -71,7 +65,7 @@ def setup_logger(logdir, locals_):
 
 class Agent(object):
     def __init__(self, path, sim_mode=False):
-        stream = open(path + "/init.yaml", "r")
+        stream = open(path + "/pg_init.yaml", "r")
         config = yaml.load(stream)
         stream.close()
         
@@ -246,7 +240,7 @@ def train_PG(logdir, path, sim_mode=False):
         timesteps_this_batch = 0
         paths = []
         while True:
-            ob = env.reset(t_steps=timesteps_this_batch)
+            ob = env.reset()
             obs, acs, rewards = [], [], []
             steps = 0
             while True:
@@ -420,7 +414,10 @@ def main():
     logdir = os.path.join(dpath, logdir)
     if not(os.path.exists(logdir)):
         os.makedirs(logdir)
-    
+
+    fname = os.path.basename(sys.argv[0])
+    copyfile(path + fname, logdir + fname)
+
     train_PG(logdir, path, sim_mode=sim)
     
 if __name__ == "__main__":

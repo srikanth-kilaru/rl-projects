@@ -90,7 +90,7 @@ def gripper_pose(x, y, z):
         return False
 
     
-def test_pg_policy(file_path, path_len, sim=False):
+def test_ac_policy(file_path, path_len, sim=False):
     env_file = file_path + "/ros_env.py"
     ef = imp.load_source('ros_env', env_file)
     env = ef.Env(file_path, train_mode=False, sim_mode=sim)
@@ -134,7 +134,7 @@ def main():
     args = parser.parse_args()
     file_path = args.path
     sim = args.sim
-    stream = open(file_path + "/pg_init.yaml", "r")
+    stream = open(file_path + "/init.yaml", "r")
         
     config = yaml.load(stream)
     stream.close()    
@@ -143,7 +143,7 @@ def main():
     tf.set_random_seed(seed)
     np.random.seed(seed)
     
-    test_pg_policy(file_path, path_len, sim)
+    test_ac_policy(file_path, path_len, sim)
     
 if __name__ == "__main__":
     main()
