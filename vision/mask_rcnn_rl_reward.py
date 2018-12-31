@@ -117,7 +117,7 @@ class MaskRCNNReward(object):
                 classMask = mask[classId]
             
                 # Draw bounding box, colorize and show the mask on the image
-                self.drawBox(self.rgb_image, classId, score, left, top,
+                self.drawBox(self.rgb_img, classId, score, left, top,
                              right, bottom, classMask)
 
     # RGB Image Msg callback
