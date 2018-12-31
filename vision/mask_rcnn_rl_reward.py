@@ -55,9 +55,9 @@ class MaskRCNNReward(object):
     
         # Print a label of class.
         label = '%.2f' % conf
-        if classes:
-            assert(classId < len(classes))
-            label = '%s:%s' % (classes[classId], label)
+        if self.classes:
+            assert(classId < len(self.classes))
+            label = '%s:%s' % (self.classes[classId], label)
         
         # Display the label at the top of the bounding box
         labelSize, baseLine = cv.getTextSize(label, cv.FONT_HERSHEY_SIMPLEX, 0.5, 1)
@@ -72,7 +72,7 @@ class MaskRCNNReward(object):
 
         # color = colors[classId%len(colors)]
         # Comment the above line and uncomment the two lines below to generate different instance colors
-        colorIndex = random.randint(0, len(colors)-1)
+        colorIndex = random.randint(0, len(self.colors)-1)
         color = self.colors[colorIndex]
 
         frame[top:bottom+1, left:right+1][mask] = ([0.3*color[0], 0.3*color[1], 0.3*color[2]] + 0.7 * roi).astype(np.uint8)
