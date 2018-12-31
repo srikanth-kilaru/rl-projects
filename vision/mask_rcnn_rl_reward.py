@@ -1,4 +1,9 @@
+#!/usr/bin/env python
 import cv2 as cv
+print(cv.__version__)
+print(cv.__file__)
+
+
 import argparse
 import numpy as np
 import os.path
@@ -27,8 +32,9 @@ def drawBox(frame, classId, conf, left, top, right, bottom, classMask):
         
     # Display the label at the top of the bounding box
     labelSize, baseLine = cv.getTextSize(label, cv.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    print(left, top, labelSize[0], labelSize[1], baseLine, int(round(1.5*labelSize[1])), int(round(1.5*labelSize[0])))
     top = max(top, labelSize[1])
-    cv.rectangle(frame, (left, top - round(1.5*labelSize[1])), (left + round(1.5*labelSize[0]), top + baseLine), (255, 255, 255), cv.FILLED)
+    cv.rectangle(frame, (left, top - int(round(1.5*labelSize[1]))), (left + int(round(1.5*labelSize[0])), top + baseLine), (255, 255, 255), cv.FILLED)
     cv.putText(frame, label, (left, top), cv.FONT_HERSHEY_SIMPLEX, 0.75, (0,0,0), 1)
 
     # Resize the mask, threshold, color and apply it on the image
@@ -86,13 +92,13 @@ def postprocess(boxes, masks):
 
 
 # Load names of classes
-classesFile = "mscoco_labels.names";
+classesFile = "./mask_rcnn_inception_v2_coco_2018_01_28/mscoco_labels.names";
 classes = None
 with open(classesFile, 'rt') as f:
    classes = f.read().rstrip('\n').split('\n')
 
 # Give the textGraph and weight files for the model
-textGraph = "./mask_rcnn_inception_v2_coco_2018_01_28.pbtxt";
+textGraph = "./mask_rcnn_inception_v2_coco_2018_01_28/mask_rcnn_inception_v2_coco_2018_01_28.pbtxt";
 modelWeights = "./mask_rcnn_inception_v2_coco_2018_01_28/frozen_inference_graph.pb";
 
 # Load the network
@@ -101,7 +107,7 @@ net.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
 net.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
 
 # Load the classes
-colorsFile = "colors.txt";
+colorsFile = "./mask_rcnn_inception_v2_coco_2018_01_28/colors.txt";
 with open(colorsFile, 'rt') as f:
     colorsStr = f.read().rstrip('\n').split('\n')
 colors = [] #[0,0,0]
@@ -131,11 +137,11 @@ elif (args.video):
 else:
     # Webcam input
     cap = cv.VideoCapture(0)
-
+'''
 # Get the video writer initialized to save the output video
 if (not args.image):
     vid_writer = cv.VideoWriter(outputFile, cv.VideoWriter_fourcc('M','J','P','G'), 28, (round(cap.get(cv.CAP_PROP_FRAME_WIDTH)),round(cap.get(cv.CAP_PROP_FRAME_HEIGHT))))
-
+'''
 while cv.waitKey(1) < 0:
     
     # Get frame from the video

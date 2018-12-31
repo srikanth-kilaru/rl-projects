@@ -1,2 +1,0 @@
-model_checkpoint_path: "/home/srikanth/rl-projects/actor-critic//data/AC_28-12-2018_19-15/model.ckpt"
-all_model_checkpoint_paths: "/home/srikanth/rl-projects/actor-critic//data/AC_28-12-2018_19-15/model.ckpt"
