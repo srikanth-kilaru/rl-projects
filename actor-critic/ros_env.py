@@ -45,17 +45,13 @@ def xyzw_to_mat44(ori):
     return transformations.quaternion_matrix((ori.x, ori.y, ori.z, ori.w))
 
 class Env(object):
-    def __init__(self, path, train_mode=True, sim_mode=False):
+    def __init__(self, path, train_mode=True):
         self.train_mode = train_mode
-        self.sim_mode = sim_mode
         self.obs_lock = threading.Lock()
 
         # path where the python script for agent and env reside
         self.path = path
-        if not sim_mode:
-            string = "sawyer_ros"
-        else:
-            string = "sim"
+        string = "sawyer_ros"
         rospy.init_node(string + "_environment")
         self.logp = None
         if self.train_mode:
@@ -79,8 +75,6 @@ class Env(object):
         self.goal_pos_y3 = None
         self.goal_pos_z3 = None
         
-        # dt - time step used for simulation
-        self.dt = 0.1
         self._load_inits(path)
         self.cur_obs = np.zeros(self.obs_dim)
         self.cur_act = np.zeros(self.act_dim)
@@ -91,21 +85,20 @@ class Env(object):
         self.all_jnts = copy.copy(self.limb.joint_names())
         self.limb.set_joint_position_speed(0.2)
 
-        if not self.sim_mode:
-            self.rate = rospy.Rate(10)
-            self.tf_buffer = tf2_ros.Buffer()    
-            self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-            self.jnt_st_sub = rospy.Subscriber('/robot/joint_states',
-                                               JointState,
-                                               self._update_jnt_state,
-                                               queue_size=1)
-            self.jnt_cm_pub = rospy.Publisher('/robot/limb/right/joint_command',
-                                              JointCommand, queue_size=None)    
-            self.jnt_ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
-                                               EndpointState,
-                                               self.update_ee_pose,
-                                               queue_size=1)
-            
+        self.rate = rospy.Rate(10)
+        self.tf_buffer = tf2_ros.Buffer()    
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+        self.jnt_st_sub = rospy.Subscriber('/robot/joint_states',
+                                           JointState,
+                                           self._update_jnt_state,
+                                           queue_size=1)
+        self.jnt_cm_pub = rospy.Publisher('/robot/limb/right/joint_command',
+                                          JointCommand, queue_size=None)    
+        self.jnt_ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
+                                           EndpointState,
+                                           self.update_ee_pose,
+                                           queue_size=1)
+        
 
         '''
         Three points on the object in "right_gripper_base" frame.
@@ -187,6 +180,7 @@ class Env(object):
         # joint position limits have to be in ascending order of joint number
         # jnt_init_limits is a ordered list of [lower_limit, upper_limit] for
         # each joint in motion
+        # limits for the joint positions
         self.jnt_init_limits = config['jnt_init_limits']
         self.cmd_mode = config['cmd_mode']
         if self.cmd_mode == 'VELOCITY_MODE':
@@ -337,7 +331,6 @@ class Env(object):
         
     '''
     This function is called from reset only and during both training and testing
-    for Real and sim environments
     '''
     def _init_jnt_state(self):
         q_jnt_angles = copy.copy(self.init_pos)
@@ -476,13 +469,6 @@ class Env(object):
         self.goal_pos_y3 = self.goal_XYZs[k][2][1] + np.random.uniform(l,u)
         self.goal_pos_z3 = self.goal_XYZs[k][2][2] + np.random.uniform(l,u)
            
-    def _sim_integrate_action(self, action):
-        obs = self.dt*action
-        obs += np.random.normal(0, 1) # add some noise
-        cur_obs = self._get_cur_obs()
-        cur_obs[:self.jnt_obs_dim] += obs
-        self._set_cur_obs(cur_obs)
-        
     def reset(self):
         # called Initially when the Env is initialized
         # set the initial joint state and send the command
@@ -510,7 +496,7 @@ class Env(object):
         cur_obs[od+17] = self.goal_pos_z3
         self._set_cur_obs(cur_obs)
 
-        # this call will result in sleeping for 3 seconds for non-sim env
+        # this call will result in sleeping for 3 seconds 
         self._init_jnt_state()
         # send the latest observations
         return self._get_cur_obs()

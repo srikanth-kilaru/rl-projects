@@ -195,8 +195,7 @@ def train_AC(logdir, path):
     agent.actor_update_op = tf.train.AdamOptimizer(agent.learning_rate).minimize(actor_loss)
     
     # define the critic
-    agent.critic_prediction = tf.squeeze(build_mlp(agent.sy_ob_no,
-                                                   1,
+    agent.critic_prediction = tf.squeeze(build_mlp(agent.sy_ob_no, 1,
                                                    "nn_critic",
                                                    n_layers=agent.n_layers + 2,
                                                    size=agent.size + 32))

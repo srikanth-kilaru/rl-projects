@@ -13,6 +13,7 @@ import roslib
 import numpy as np
 import cv2
 import os
+import os.path
 import glob
 from math import ceil
 from std_msgs.msg import String
@@ -44,6 +45,7 @@ import pyzbar.pyzbar as pyzbar
 import pcl
 from sensor_msgs.msg import PointCloud2
 import sensor_msgs.point_cloud2 as pc2
+
 
 def nothing(x):
     pass
@@ -83,7 +85,11 @@ def depth_checks(z):
         return False
 
 class ObjPoseEstimator(object):
-    def __init__(self, n_verts=4, tune=False, qr=False):
+    def __init__(self, file_path=None, tgoal=True,
+                 n_verts=4, tune=False, qr=False):
+        if file_path is None:
+            print("File path needs to be specified!")
+            exit()
         self.bridge = CvBridge()
         self.ir_img = None
         self.depth_img = None
@@ -108,11 +114,14 @@ class ObjPoseEstimator(object):
         self.verts_x = None
         self.verts_y = None
         self.cntr = 0
-        self.obj_coords_ee = []
+        self.obj_coords = []
+        self.file_path = file_path
+        self.tgoal = tgoal
         self.once = True
         self.tf_buffer = tf2_ros.Buffer()    
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-        self.initialize_jnts()
+        if not self.tgoal:
+            self.initialize_jnts()
 
     def initialize_jnts(self):
         print("Initializing joints...")
@@ -275,8 +284,22 @@ class ObjPoseEstimator(object):
         
         if len(self.XYZ) == len(self.verts_best) and len(self.XYZ) != 0:
             print 'Xr, Yr, Zr', self.XYZ
-
+            if self.tgoal:
+                f = open(self.file_path, "a+")
+                f.write("[")
+                i = 0
+                for coords in self.XYZ:
+                    i += 1
+                    self.obj_coords.append([coords[0], coords[1], coords[2]])
+                    f.write("[", coords[0], ", ", coords[1], ", ",
+                            coords[2], "]")
+                    if i < len(self.XYZ):
+                        f.write(",")
+                
+                f.write("]")
+                f.close()
         
+    '''
     def pcl_subscr(self, data):
         
         if len(self.verts_best) != self.n_verts:
@@ -289,7 +312,7 @@ class ObjPoseEstimator(object):
             print p[0], p[1], p[2], p[3]
         pcl_data = pcl.PointCloud_PointXYZRGB()
         pcl_data.from_list(points_list)
-        '''
+
         for pd in pcl_data:
             print pd
         width = 640
@@ -303,7 +326,7 @@ class ObjPoseEstimator(object):
             print("Xr, Yr, Zr", Xr, Yr, Zr)                
             if len(self.XYZ) != len(self.verts_best):
                 self.XYZ.append([Xr, Yr, Zr])
-        '''
+    '''
                 
     def rgb_image_subscr(self, data):
         try:
@@ -372,7 +395,7 @@ class ObjPoseEstimator(object):
         Or it is possible that we have already calculated the coordinates
         and no more processing is needed
         '''
-        if len(self.XYZ) == 0 or len(self.obj_coords_ee) != 0:
+        if len(self.XYZ) == 0 or len(self.obj_coords) != 0:
             return
         
         try:
@@ -391,7 +414,10 @@ class ObjPoseEstimator(object):
         mat44 = np.dot(transformations.translation_matrix(trans),
                        transformations.quaternion_matrix(rot))
 
+        f = open(self.file_path, "a+")
+        i = 0
         for coords in self.XYZ:
+            i += 1
             obj_pose = PoseStamped()
             obj_pose.header.frame_id = "right_gripper_base"
             obj_pose.pose.position.x = coords[0]
@@ -402,19 +428,25 @@ class ObjPoseEstimator(object):
             txpose = np.dot(mat44, pose44)
             xyz = tuple(transformations.translation_from_matrix(txpose))[:3]
             x, y, z = xyz
-            self.obj_coords_ee.append([x,y,z])
-            print(x,y,z)
-        
+            self.obj_coords.append([x,y,z])
+            f.write("obj_x%d: %f", i, x)
+            f.write("obj_y%d: %f", i, y)
+            f.write("obj_z%d: %f", i, z)
+        f.close()
+            
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--verts', type=int)
+    parser.add_argument('--fp', type=str)
     parser.add_argument('--tune', action='store_true')
     parser.add_argument('--qr', action='store_true')
+    parser.add_argument('--tgoal', action='store_true')
     args = parser.parse_args()
 
     rospy.init_node('obj_pose_estimator')
     print("Initialized obj_pose_estimator...")
-    obs = ObjPoseEstimator(n_verts=args.verts, tune=args.tune, qr=args.qr)
+    obs = ObjPoseEstimator(file_path=args.fp, tgoal=args.tgoal,
+                           n_verts=args.verts, tune=args.tune, qr=args.qr)
     
     # Get the camera calibration parameter for the rectified image
     #     [fx'  0  cx' Tx]

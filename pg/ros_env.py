@@ -34,21 +34,9 @@ from tf_conversions import posemath
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
-'''
-from intera_motion_interface import (
-    MotionTrajectory,
-    MotionWaypoint,
-    MotionWaypointOptions
-)
-'''
+
 from intera_interface import Limb
 from tf import transformations
-sys.path.append('/home/srikanth/sawyerws/hrl-kdl/')
-sys.path.append('/home/srikanth/sawyerws/hrl-kdl/hrl_geom/src/')
-sys.path.append('/home/srikanth/sawyerws/hrl-kdl/pykdl_utils/src')
-from urdf_parser_py.urdf import URDF
-from pykdl_utils.kdl_parser import kdl_tree_from_urdf_model
-from pykdl_utils.kdl_kinematics import KDLKinematics
 
 def xyz_to_mat44(pos):
     return transformations.translation_matrix((pos.x, pos.y, pos.z))
@@ -57,17 +45,13 @@ def xyzw_to_mat44(ori):
     return transformations.quaternion_matrix((ori.x, ori.y, ori.z, ori.w))
 
 class Env(object):
-    def __init__(self, path, train_mode=True, sim_mode=False):
+    def __init__(self, path, train_mode=True):
         self.train_mode = train_mode
-        self.sim_mode = sim_mode
         self.obs_lock = threading.Lock()
 
         # path where the python script for agent and env reside
         self.path = path
-        if not sim_mode:
-            string = "sawyer_ros"
-        else:
-            string = "sim"
+        string = "sawyer_ros"
         rospy.init_node(string + "_environment")
         self.logp = None
         if self.train_mode:
@@ -91,8 +75,6 @@ class Env(object):
         self.goal_pos_y3 = None
         self.goal_pos_z3 = None
         
-        # dt - time step used for simulation
-        self.dt = 0.1
         self._load_inits(path)
         self.cur_obs = np.zeros(self.obs_dim)
         self.cur_act = np.zeros(self.act_dim)
@@ -103,25 +85,20 @@ class Env(object):
         self.all_jnts = copy.copy(self.limb.joint_names())
         self.limb.set_joint_position_speed(0.2)
 
-        self.robot = URDF.from_parameter_server()
-        self.kdl_kin_r = KDLKinematics(self.robot, 'base',
-                                       'right_gripper_r_finger_tip')
-        self.kdl_kin_l = KDLKinematics(self.robot, 'base',
-                                       'right_gripper_l_finger_tip')
+        self.rate = rospy.Rate(10)
+        self.tf_buffer = tf2_ros.Buffer()    
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+        self.jnt_st_sub = rospy.Subscriber('/robot/joint_states',
+                                           JointState,
+                                           self._update_jnt_state,
+                                           queue_size=1)
+        self.jnt_cm_pub = rospy.Publisher('/robot/limb/right/joint_command',
+                                          JointCommand, queue_size=None)    
+        self.jnt_ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
+                                           EndpointState,
+                                           self.update_ee_pose,
+                                           queue_size=1)
         
-        if not self.sim_mode:
-            self.rate = rospy.Rate(10)
-            self.jnt_st_sub = rospy.Subscriber('/robot/joint_states',
-                                               JointState,
-                                               self._update_jnt_state,
-                                               queue_size=1)
-            self.jnt_cm_pub = rospy.Publisher('/robot/limb/right/joint_command',
-                                              JointCommand, queue_size=None)
-        
-            self.jnt_ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
-                                               EndpointState,
-                                               self.update_ee_pose,
-                                               queue_size=1)
 
         '''
         Three points on the object in "right_gripper_base" frame.
@@ -146,9 +123,6 @@ class Env(object):
         self.obj_pose3.pose.position.y = self.obj_y3
         self.obj_pose3.pose.position.z = self.obj_z3
         
-        self.tf_buffer = tf2_ros.Buffer()    
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-
 
     '''
     All members of the observation vector have to be provided
@@ -173,7 +147,6 @@ class Env(object):
             self.obs_lock.release()
         return obs
 
-
     def close_env_log(self):
         self.logp.close()
         self.logp = None
@@ -194,7 +167,7 @@ class Env(object):
             # Store versions of the main code required for
             # test and debug after training
             copyfile(path + "/init.yaml",
-                     self.logpath + "/pg_init.yaml")
+                     self.logpath + "/init.yaml")
             copyfile(path + "/ros_env.py",
                      self.logpath+"/ros_env.py")
 
@@ -208,9 +181,9 @@ class Env(object):
         # jnt_init_limits is a ordered list of [lower_limit, upper_limit] for
         # each joint in motion
         # limits for the joint positions
-        self.jnt_pos_limits = config['jnt_pos_limits']
+        self.jnt_init_limits = config['jnt_init_limits']
         self.cmd_mode = config['cmd_mode']
-        if self.cmd_mode == VELOCITY_MODE:
+        if self.cmd_mode == 'VELOCITY_MODE':
             # limits for the joint positions
             self.jnt_pos_limits = config['jnt_pos_limits']
             self.vel_limit = config['vel_limit']
@@ -253,9 +226,9 @@ class Env(object):
         The last joint is the gripper finger joint and stays fixed
         '''
         self.jnt_indices = config['jnt_indices']
-
         # test time goals specified in jnt angle space (for now)
-        self.test_goal =  config['test_goal']
+        if not self.train_mode:
+            self.test_goal =  config['test_goal']
         self.max_training_goals = config['max_training_goals']
         self.batch_size = config['min_timesteps_per_batch']
         self.goal_XYZs = config['goal_XYZs']
@@ -323,17 +296,15 @@ class Env(object):
         obs[self.jnt_obs_dim+6] = x 
         obs[self.jnt_obs_dim+7] = y 
         obs[self.jnt_obs_dim+8] = z 
-
+        '''
+        self._print_env_log("EE coordinates: "
+                            + str(msg.pose.position.x) +
+                            ", " + str(msg.pose.position.y) + ", " +
+                            str(msg.pose.position.z))
+        self._print_env_log("Obj location: "
+                            + str(obs[self.jnt_obs_dim:self.jnt_obs_dim+9]))
+        '''
         self._set_cur_obs(obs)
-        
-    def _update_obj_coords(self, q_jnt_angles):
-        # forward kinematics (returns homogeneous 4x4 numpy.mat)
-        pose_r = self.kdl_kin_r.forward(q_jnt_angles)
-        pose_l = self.kdl_kin_l.forward(q_jnt_angles)
-        #object face center is right in between the two tip frames
-        pose = 0.5*(pose_l + pose_r)
-        x, y, z = transformations.translation_from_matrix(pose)[:3]
-        return x, y, z
         
     def _update_jnt_state(self, msg):
         '''
@@ -360,33 +331,10 @@ class Env(object):
         
     '''
     This function is called from reset only and during both training and testing
-    for Real and sim environments
     '''
     def _init_jnt_state(self):
         q_jnt_angles = copy.copy(self.init_pos)
         
-        if self.sim_mode:
-            '''
-            enum_iter = enumerate(self.jnt_indices, start=0)
-            obs = self._get_cur_obs()
-            for i, index in enum_iter:
-                # Build some randomness between each subsequent iteration
-                l_limit = self.jnt_init_limits[i][0]
-                u_limit = self.jnt_init_limits[i][1]
-                val = np.random.uniform(l_limit, u_limit)
-                # Update the cur obs of the joints in play 
-                obs[i] = val
-                q_jnt_angles[index] = val
-
-            x, y, z = self._update_obj_coords(q_jnt_angles)
-            obs[self.jnt_obs_dim]   = x
-            obs[self.jnt_obs_dim+1] = y
-            obs[self.jnt_obs_dim+2] = z
-            self._set_cur_obs(obs)
-            string = str(self.init_pos)
-            self._print_env_log("Initializing joint states to " + string)
-            return # its a sim, no need to send ROS messages
-            '''
         # Command Sawyer's joints to pre-set angles and velocity
         # JointCommand.msg mode: TRAJECTORY_MODE
         positions = dict()
@@ -468,47 +416,27 @@ class Env(object):
     def step(self, action):
         self.cur_act = copy.deepcopy(action)
         
-        if self.sim_mode:
-            '''
-            # NOTE: sim_mode only supports velocity and not torque control mode
-            # Usage of sim_mode in torque control mode will lead to garbage
-
-            # Integrate action also updates current obs
-            self._sim_integrate_action(self.cur_act)
-            # q_jnt_angles has j0-j6 and also finger position. Total size 8
-            q_jnt_angles = copy.copy(self.init_pos)
-            obs = self._get_cur_obs()
-            enum_iter = enumerate(self.jnt_indices, start=0)
-            for i, index in enum_iter:
-                q_jnt_angles[index] = obs[i]
-
-            x, y, z = self._update_obj_coords(q_jnt_angles)
-            obs[self.jnt_obs_dim]   = x
-            obs[self.jnt_obs_dim+1] = y
-            obs[self.jnt_obs_dim+2] = z
-            self._set_cur_obs(obs)
-            '''
+        # called to take a step with the provided action
+        # send the action as generated by policy (clip before sending)
+        clipped_acts = self._action_clip(action)
+        if self.cmd_mode == "TORQUE_MODE":
+            self._set_joint_torques(clipped_acts)
         else:
-            # called to take a step with the provided action
-            # send the action as generated by policy (clip before sending)
-            clipped_acts = self._action_clip(action)
-            if self.cmd_mode == "TORQUE_MODE":
-                self._set_joint_torques(clipped_acts)
-            else:
-                self._set_joint_velocities(clipped_acts)
-            '''
-            NOTE: Observations are being constantly updated because
-            we are subscribed to the robot state publisher and also
-            subscribed to the ee topic which calculates 
-            the pose of the goal and the block.
-            Sleep for some time, so that the action 
-            execution on the robot finishes and we wake up to 
-            pick up the latest observation
-            '''
-            # no sleep necessary if we send velocity integrated positions
-            if self.cmd_mode == "TORQUE_MODE" or self.vel_mode == "raw": 
-                self.rate.sleep()
-                
+            self._set_joint_velocities(clipped_acts)
+
+        '''
+        NOTE: Observations are being constantly updated because
+        we are subscribed to the robot state publisher and also
+        subscribed to the ee topic which calculates 
+        the pose of the goal and the block.
+        Sleep for some time, so that the action 
+        execution on the robot finishes and we wake up to 
+        pick up the latest observation
+        '''
+        # no sleep necessary if we send velocity integrated positions
+        if self.cmd_mode == "TORQUE_MODE" or self.vel_mode == "raw": 
+            self.rate.sleep()
+        
         obs = self._get_cur_obs()
         diff = self._get_diff(obs)
         done = self._is_done(diff)
@@ -528,23 +456,19 @@ class Env(object):
 
     def _set_random_training_goal(self):
         k = self.goal_cntr
-        self.goal_pos_x1 = self.goal_XYZs[k][0][0] + np.random.normal(0, 1) 
-        self.goal_pos_y1 = self.goal_XYZs[k][0][1] + np.random.normal(0, 1)
-        self.goal_pos_z1 = self.goal_XYZs[k][0][2] + np.random.normal(0, 1)
-        self.goal_pos_x2 = self.goal_XYZs[k][1][0] + np.random.normal(0, 1)
-        self.goal_pos_y2 = self.goal_XYZs[k][1][1] + np.random.normal(0, 1)
-        self.goal_pos_z2 = self.goal_XYZs[k][1][2] + np.random.normal(0, 1)
-        self.goal_pos_x3 = self.goal_XYZs[k][2][0] + np.random.normal(0, 1)
-        self.goal_pos_y3 = self.goal_XYZs[k][2][1] + np.random.normal(0, 1)
-        self.goal_pos_z3 = self.goal_XYZs[k][2][2] + np.random.normal(0, 1)
-           
-    def _sim_integrate_action(self, action):
-        obs = self.dt*action
-        obs += np.random.normal(0, 1) # add some noise
-        cur_obs = self._get_cur_obs()
-        cur_obs[:self.jnt_obs_dim] += obs
-        self._set_cur_obs(cur_obs)
+        l = -0.01
+        u = 0.01
         
+        self.goal_pos_x1 = self.goal_XYZs[k][0][0] + np.random.uniform(l,u)
+        self.goal_pos_y1 = self.goal_XYZs[k][0][1] + np.random.uniform(l,u)
+        self.goal_pos_z1 = self.goal_XYZs[k][0][2] + np.random.uniform(l,u)
+        self.goal_pos_x2 = self.goal_XYZs[k][1][0] + np.random.uniform(l,u)
+        self.goal_pos_y2 = self.goal_XYZs[k][1][1] + np.random.uniform(l,u)
+        self.goal_pos_z2 = self.goal_XYZs[k][1][2] + np.random.uniform(l,u)
+        self.goal_pos_x3 = self.goal_XYZs[k][2][0] + np.random.uniform(l,u)
+        self.goal_pos_y3 = self.goal_XYZs[k][2][1] + np.random.uniform(l,u)
+        self.goal_pos_z3 = self.goal_XYZs[k][2][2] + np.random.uniform(l,u)
+           
     def reset(self):
         # called Initially when the Env is initialized
         # set the initial joint state and send the command
@@ -570,10 +494,9 @@ class Env(object):
         cur_obs[od+15] = self.goal_pos_x3
         cur_obs[od+16] = self.goal_pos_y3
         cur_obs[od+17] = self.goal_pos_z3
-        
         self._set_cur_obs(cur_obs)
 
-        # this call will result in sleeping for 3 seconds for non-sim env
+        # this call will result in sleeping for 3 seconds 
         self._init_jnt_state()
         # send the latest observations
         return self._get_cur_obs()
@@ -581,7 +504,7 @@ class Env(object):
     def _get_diff (self, obs):
         od = self.jnt_obs_dim
 
-        diff = [abs(obs[od] - obs[od+9]),
+        diff = [abs(obs[od+0] - obs[od+9]),
                 abs(obs[od+1] - obs[od+10]),
                 abs(obs[od+2] - obs[od+11]),
                 abs(obs[od+3] - obs[od+12]),
