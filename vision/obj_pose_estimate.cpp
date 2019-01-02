@@ -167,14 +167,20 @@ void pcl_imageCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
       int k;
       cv::Mat robot_coords;
       
-      filep.open("good-coords.txt");
+      filep.open("obj-coords.txt");
+      filep << "test_goal: [";
       for (k = 0; k < 4; k++) {
+	int cntr = 0;
 	if (!isnan(Xc[k]) && !isnan(Yc[k]) && !isnan(Zc[k])) {
 	  robot_coords = transform_camera2robot(Xc[k], Yc[k], Zc[k]);
 	  //filep << Xc[k] << ", " << Yc[k] << ", " << Zc[k] << endl;
-	  filep << robot_coords.at<double>(0,1) << ", " << robot_coords.at<double>(1,1) << ", " << robot_coords.at<double>(2,1) << endl;
+	  filep << "[" << robot_coords.at<double>(0,1) << ", " << robot_coords.at<double>(1,1) << ", " << robot_coords.at<double>(2,1) << "]";
+	  ++cntr;
+	  if (cntr < 3)
+	    filep << ",";
 	}
       }
+      filep << "]";
       filep.close();
     }
   }

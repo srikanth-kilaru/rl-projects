@@ -34,32 +34,25 @@ from tf_conversions import posemath
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
-
+import cv2 as cv
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
 from intera_interface import Limb
-from tf import transformations
 
-def xyz_to_mat44(pos):
-    return transformations.translation_matrix((pos.x, pos.y, pos.z))
-
-def xyzw_to_mat44(ori):
-    return transformations.quaternion_matrix((ori.x, ori.y, ori.z, ori.w))
 
 class Env(object):
-    def __init__(self, path, train_mode=True, sim_mode=False):
+    def __init__(self, path, train_mode=True):
         self.train_mode = train_mode
-        self.sim_mode = sim_mode
         self.obs_lock = threading.Lock()
 
         # path where the python script for agent and env reside
         self.path = path
-        if not sim_mode:
-            string = "sawyer_ros"
-        else:
-            string = "sim"
+        string = "sawyer_ros_cnn"
+
         rospy.init_node(string + "_environment")
         self.logp = None
         if self.train_mode:
-            self.logpath = "AC" + '_' + time.strftime("%d-%m-%Y_%H-%M")
+            self.logpath = "CNN_Rew" + '_' + time.strftime("%d-%m-%Y_%H-%M")
             self.logpath = os.path.join(path + '/data', self.logpath)
             if not(os.path.exists(self.logpath)):
                 # we should never have to create dir, as agent already done it
@@ -68,19 +61,6 @@ class Env(object):
             self.logp = open(logfile, "w")
 
         
-        # Goal does not move and is specified by three points (for pose reasons)
-        self.goal_pos_x1 = None
-        self.goal_pos_y1 = None
-        self.goal_pos_z1 = None
-        self.goal_pos_x2 = None
-        self.goal_pos_y2 = None
-        self.goal_pos_z2 = None
-        self.goal_pos_x3 = None
-        self.goal_pos_y3 = None
-        self.goal_pos_z3 = None
-        
-        # dt - time step used for simulation
-        self.dt = 0.1
         self._load_inits(path)
         self.cur_obs = np.zeros(self.obs_dim)
         self.cur_act = np.zeros(self.act_dim)
@@ -91,44 +71,21 @@ class Env(object):
         self.all_jnts = copy.copy(self.limb.joint_names())
         self.limb.set_joint_position_speed(0.2)
 
-        if not self.sim_mode:
-            self.rate = rospy.Rate(10)
-            self.tf_buffer = tf2_ros.Buffer()    
-            self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-            self.jnt_st_sub = rospy.Subscriber('/robot/joint_states',
-                                               JointState,
-                                               self._update_jnt_state,
-                                               queue_size=1)
-            self.jnt_cm_pub = rospy.Publisher('/robot/limb/right/joint_command',
-                                              JointCommand, queue_size=None)    
-            self.jnt_ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
-                                               EndpointState,
-                                               self.update_ee_pose,
-                                               queue_size=1)
-            
+        self.rate = rospy.Rate(10)
 
-        '''
-        Three points on the object in "right_gripper_base" frame.
-        Obect is static in gripper frame. Needs to be calculated only once
-        during init time
-        '''
-        self.obj_pose1 = PoseStamped()
-        self.obj_pose1.header.frame_id = "right_gripper_base"
-        self.obj_pose1.pose.position.x = self.obj_x1
-        self.obj_pose1.pose.position.y = self.obj_y1
-        self.obj_pose1.pose.position.z = self.obj_z1
+        self.jnt_st_sub = rospy.Subscriber('/robot/joint_states',
+                                           JointState,
+                                           self._update_jnt_state,
+                                           queue_size=1)
+        self.jnt_cm_pub = rospy.Publisher('/robot/limb/right/joint_command',
+                                          JointCommand, queue_size=None)    
+        self.jnt_ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
+                                           EndpointState,
+                                           self.update_ee_pose,
+                                           queue_size=1)
+        self.rgb_sub = rospy.Subscriber("/camera/rgb/image_raw",
+                                        Image, rew.rgb_image_subscr)
 
-        self.obj_pose2 = PoseStamped()
-        self.obj_pose2.header.frame_id = "right_gripper_base"
-        self.obj_pose2.pose.position.x = self.obj_x2
-        self.obj_pose2.pose.position.y = self.obj_y2
-        self.obj_pose2.pose.position.z = self.obj_z2
-
-        self.obj_pose3 = PoseStamped()
-        self.obj_pose3.header.frame_id = "right_gripper_base"
-        self.obj_pose3.pose.position.x = self.obj_x3
-        self.obj_pose3.pose.position.y = self.obj_y3
-        self.obj_pose3.pose.position.z = self.obj_z3
         
 
     '''
@@ -173,12 +130,12 @@ class Env(object):
         if self.train_mode:
             # Store versions of the main code required for
             # test and debug after training
-            copyfile(path + "/init.yaml",
+            copyfile(path + "/cnn_reward_init.yaml",
                      self.logpath + "/init.yaml")
-            copyfile(path + "/ros_env.py",
-                     self.logpath+"/ros_env.py")
+            copyfile(path + "/cnn_reward_env.py",
+                     self.logpath+"/cnn_reward_env.py")
 
-        stream = open(path + "/init.yaml", "r")
+        stream = open(path + "/cnn_reward_init.yaml", "r")
         config = yaml.load(stream)
         stream.close()
         self.distance_thresh = config['distance_thresh']
@@ -237,78 +194,21 @@ class Env(object):
             self.test_goal =  config['test_goal']
         self.max_training_goals = config['max_training_goals']
         self.batch_size = config['min_timesteps_per_batch']
-        self.goal_XYZs = config['goal_XYZs']
-        '''
-        The following 9 object coordinates are in "right_gripper_base" frame
-        They are relayed by the camera observer at init time.
-        They can be alternatively read from the pg_init.yaml file too
-        '''
-        self.obj_x1 = config['obj_x1']
-        self.obj_y1 = config['obj_y1']
-        self.obj_z1 = config['obj_z1']
-        self.obj_x2 = config['obj_x2']
-        self.obj_y2 = config['obj_y2']
-        self.obj_z2 = config['obj_z2']
-        self.obj_x3 = config['obj_x3']
-        self.obj_y3 = config['obj_y3']
-        self.obj_z3 = config['obj_z3']
-        
+        self.goal_classes = config['goal_classes']
+                
     # Callback invoked when EE pose update message is received
-    # This function will update the pose of object in gripper
     def update_ee_pose(self, msg):
-        try:
-            tform = self.tf_buffer.lookup_transform("base",
-                                                    "right_gripper_base",
-                                                    rospy.Time(),
-                                                    rospy.Duration(1.0))
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException,
-                tf2_ros.ExtrapolationException):
-            self._print_env_log("TF Exception, not storing update")
-            return
-
         obs = self._get_cur_obs()
 
-        trans = (tform.transform.translation.x, tform.transform.translation.y, tform.transform.translation.z)
-        rot = (tform.transform.rotation.x, tform.transform.rotation.y, tform.transform.rotation.z, tform.transform.rotation.w)
-        mat44 = np.dot(transformations.translation_matrix(trans),
-                       transformations.quaternion_matrix(rot))
+        obs[self.jnt_obs_dim]   = msg.pose.position.x
+        obs[self.jnt_obs_dim+1] = msg.pose.position.y
+        obs[self.jnt_obs_dim+2] = msg.pose.position.z
 
-        pose44 = np.dot(xyz_to_mat44(self.obj_pose1.pose.position),
-                        xyzw_to_mat44(self.obj_pose1.pose.orientation))
-        txpose = np.dot(mat44, pose44)
-        xyz = tuple(transformations.translation_from_matrix(txpose))[:3]
-        x, y, z = xyz
-
-        obs[self.jnt_obs_dim]   = x 
-        obs[self.jnt_obs_dim+1] = y 
-        obs[self.jnt_obs_dim+2] = z 
-
-        pose44 = np.dot(xyz_to_mat44(self.obj_pose2.pose.position),
-                        xyzw_to_mat44(self.obj_pose2.pose.orientation))
-        txpose = np.dot(mat44, pose44)
-        xyz = tuple(transformations.translation_from_matrix(txpose))[:3]
-        x, y, z = xyz
-
-        obs[self.jnt_obs_dim+3] = x 
-        obs[self.jnt_obs_dim+4] = y 
-        obs[self.jnt_obs_dim+5] = z 
-
-        pose44 = np.dot(xyz_to_mat44(self.obj_pose3.pose.position),
-                        xyzw_to_mat44(self.obj_pose3.pose.orientation))
-        txpose = np.dot(mat44, pose44)
-        xyz = tuple(transformations.translation_from_matrix(txpose))[:3]
-        x, y, z = xyz
-
-        obs[self.jnt_obs_dim+6] = x 
-        obs[self.jnt_obs_dim+7] = y 
-        obs[self.jnt_obs_dim+8] = z 
         '''
         self._print_env_log("EE coordinates: "
                             + str(msg.pose.position.x) +
                             ", " + str(msg.pose.position.y) + ", " +
                             str(msg.pose.position.z))
-        self._print_env_log("Obj location: "
-                            + str(obs[self.jnt_obs_dim:self.jnt_obs_dim+9]))
         '''
         self._set_cur_obs(obs)
         
@@ -337,7 +237,6 @@ class Env(object):
         
     '''
     This function is called from reset only and during both training and testing
-    for Real and sim environments
     '''
     def _init_jnt_state(self):
         q_jnt_angles = copy.copy(self.init_pos)
@@ -445,50 +344,22 @@ class Env(object):
             self.rate.sleep()
         
         obs = self._get_cur_obs()
-        diff = self._get_diff(obs)
-        done = self._is_done(diff)
-        self.cur_reward = self._calc_reward(diff, done)
-        return obs, self.cur_reward, done
+        self.cur_reward = self._calc_reward()
+        return obs, self.cur_reward, self.cur_reward > 0.0
 
-    def _set_cartesian_test_goal(self):    
-        self.goal_pos_x1 = self.test_goal[0][0]
-        self.goal_pos_y1 = self.test_goal[0][1]
-        self.goal_pos_z1 = self.test_goal[0][2]
-        self.goal_pos_x1 = self.test_goal[1][0]
-        self.goal_pos_y1 = self.test_goal[1][1]
-        self.goal_pos_z1 = self.test_goal[1][2]
-        self.goal_pos_x1 = self.test_goal[2][0]
-        self.goal_pos_y1 = self.test_goal[2][1]
-        self.goal_pos_z1 = self.test_goal[2][2]
-
+    def _set_test_goal(self):    
+        self.goal_class_id = self.test_goal
+        
     def _set_random_training_goal(self):
         k = self.goal_cntr
-        l = -0.01
-        u = 0.01
-        
-        self.goal_pos_x1 = self.goal_XYZs[k][0][0] + np.random.uniform(l,u)
-        self.goal_pos_y1 = self.goal_XYZs[k][0][1] + np.random.uniform(l,u)
-        self.goal_pos_z1 = self.goal_XYZs[k][0][2] + np.random.uniform(l,u)
-        self.goal_pos_x2 = self.goal_XYZs[k][1][0] + np.random.uniform(l,u)
-        self.goal_pos_y2 = self.goal_XYZs[k][1][1] + np.random.uniform(l,u)
-        self.goal_pos_z2 = self.goal_XYZs[k][1][2] + np.random.uniform(l,u)
-        self.goal_pos_x3 = self.goal_XYZs[k][2][0] + np.random.uniform(l,u)
-        self.goal_pos_y3 = self.goal_XYZs[k][2][1] + np.random.uniform(l,u)
-        self.goal_pos_z3 = self.goal_XYZs[k][2][2] + np.random.uniform(l,u)
+        self.goal_class_id = self.goal_classes[k]
            
-    def _sim_integrate_action(self, action):
-        obs = self.dt*action
-        obs += np.random.normal(0, 1) # add some noise
-        cur_obs = self._get_cur_obs()
-        cur_obs[:self.jnt_obs_dim] += obs
-        self._set_cur_obs(cur_obs)
-        
     def reset(self):
         # called Initially when the Env is initialized
         # set the initial joint state and send the command
         
         if not self.train_mode:
-            self._set_cartesian_test_goal()
+            self._set_test_goal()
         else:
             if self.goal_cntr == self.max_training_goals - 1:
                 self.goal_cntr = 0
@@ -496,64 +367,12 @@ class Env(object):
                 self.goal_cntr += 1
             self._set_random_training_goal()
 
-        cur_obs = self._get_cur_obs()
-        # Update cur_obs with the new goal
-        od = self.jnt_obs_dim
-        cur_obs[od+9]  = self.goal_pos_x1
-        cur_obs[od+10] = self.goal_pos_y1
-        cur_obs[od+11] = self.goal_pos_z1
-        cur_obs[od+12] = self.goal_pos_x2
-        cur_obs[od+13] = self.goal_pos_y2
-        cur_obs[od+14] = self.goal_pos_z2
-        cur_obs[od+15] = self.goal_pos_x3
-        cur_obs[od+16] = self.goal_pos_y3
-        cur_obs[od+17] = self.goal_pos_z3
-        self._set_cur_obs(cur_obs)
-
-        # this call will result in sleeping for 3 seconds for non-sim env
+        # this call will result in sleeping for 3 seconds
         self._init_jnt_state()
         # send the latest observations
         return self._get_cur_obs()
 
-    def _get_diff (self, obs):
-        od = self.jnt_obs_dim
-
-        diff = [abs(obs[od+0] - obs[od+9]),
-                abs(obs[od+1] - obs[od+10]),
-                abs(obs[od+2] - obs[od+11]),
-                abs(obs[od+3] - obs[od+12]),
-                abs(obs[od+4] - obs[od+13]),
-                abs(obs[od+5] - obs[od+14]),
-                abs(obs[od+6] - obs[od+15]),
-                abs(obs[od+7] - obs[od+16]),
-                abs(obs[od+8] - obs[od+17])]
-
-        return diff
-    
-    def _is_done(self, diff):
-        # all elements of d are positive values
-        done = all(d <= self.distance_thresh for d in diff)
-        if done:
-            self._print_env_log(" Reached the goal!!!! ")
-        return done
-
-    def _calc_reward(self, diff, done):
-        l2 = np.linalg.norm(np.array(diff))
-        l2sq = l2**2
-        alpha = 1e-6
-        w_l2 = -1e-3
-        w_u = -1e-2
-        w_log = -1.0
-        reward = 0.0
-        dist_cost = l2sq
-        precision_cost = np.log(l2sq + alpha)
-        cntrl_cost = np.square(self.cur_act).sum()
+    def _calc_reward(self):
         
-        reward += w_l2 * dist_cost + w_log * precision_cost + w_u * cntrl_cost
-        
-        string = "l2sq: {}, log of l2sq: {} contrl_cost: {} reward: {}".format(dist_cost,
-                                                                               precision_cost,
-                                                                               cntrl_cost,
-                                                                               reward)
         self._print_env_log(" Current Reward: " + string)        
         return reward

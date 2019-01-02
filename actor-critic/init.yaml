@@ -8,8 +8,8 @@ n_experiments: 1
 nn_baseline: True
 n_layers: 2
 size: 64
-max_path_length: 800
-min_timesteps_per_batch: 5600
+max_path_length: 1000
+min_timesteps_per_batch: 10000
 num_target_updates: 10
 num_grad_steps_per_target_update: 10
 
