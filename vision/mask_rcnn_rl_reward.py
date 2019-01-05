@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+'''
+A significant portion of this code is attributed to learnopencv
+'''
 import cv2 as cv
 import argparse
 import numpy as np
