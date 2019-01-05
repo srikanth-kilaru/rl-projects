@@ -88,7 +88,7 @@ class ObjPoseEstimator(object):
     def __init__(self, file_path=None, tgoal=True,
                  n_verts=4, tune=False, qr=False):
         if file_path is None:
-            print("File path needs to be specified!")
+            print("Path to file where object coordinates are stored  needs to be specified!")
             exit()
         self.bridge = CvBridge()
         self.ir_img = None
@@ -171,11 +171,11 @@ class ObjPoseEstimator(object):
             for verts in self.verts_best:
                 im = cv2.circle(im, (verts[0], verts[1]), 2, (255,0,0), 2)
 
-            '''
+            
             # Display results 
             cv2.imshow("QR coordinates", im)
             cv2.waitKey(3)
-            '''
+
             
     def find_vertices_mode(self, vertices):
         if self.verts_x is None:

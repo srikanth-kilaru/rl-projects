@@ -54,7 +54,7 @@ class KBEnv(object):
     def __init__(self, path):
 
         rospy.init_node('sawyer_arm_cntrl')
-        self.load_inits(path+'/init.yaml')
+        self.load_inits(path+'/pg_init.yaml')
 
         self.limb = Limb()
         self.all_jnts = copy.copy(self.limb.joint_names())
