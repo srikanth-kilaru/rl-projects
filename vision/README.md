@@ -38,7 +38,7 @@ NOTE: Invalid depth values are eliminated.
 
 * Transform the coordinates of the three points on the object from Camera frame to Sawyer's base frame. This should be a known tranformation based upon where the camera reference frame is located in relation to Sawyer's base reference frame. These coordinates are then transformed to the Endpoint / Gripper frame in the callback to the ROS topic /robot/limb/right/endpoint_state using the tf service.
 
-* These coordinates of the three points are then written to the file specified to the script, the init.yaml file used by the RL algorithms during training and testing phase.
+* The coordinates of these three points are then written to the file specified to the script, the init.yaml file used by the RL algorithms during training and testing phase.
 
 ### Goal pose estimation
 
@@ -66,4 +66,4 @@ NOTE: Invalid depth values are eliminated.
 
 * Transform the coordinates of the three points on the object from Camera frame to Sawyer's base frame. This should be a known tranformation based upon where the camera reference frame is located in relation to Sawyer's base reference frame. 
 
-* These coordinates of the three points on the goal are then written to the file specified to the script, the init.yaml file used by the RL algorithms during training and testing phase.
+* The coordinates of these three points on the goal are then written to the file specified to the script, the init.yaml file used by the RL algorithms during training and testing phase.
