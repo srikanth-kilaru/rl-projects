@@ -14,6 +14,7 @@ Cartesian coordinates of 3 points on the out facing surface of the object are us
 ### Object pose identification
 Before the the RL training phase begins, the ROS node in obj_pose_estimate.py script is used to estimate the pose of the object held by the gripper in the gripper's reference frame. This pose stays fixed throughout the experiment as the object does not move in the gripper reference frame. However, as the end effector moves through space, this fixed object pose in the gripper's frame, is changing in Sawyer's base frame. The object's pose in the gripper frame is transformed into a pose in Sawyer's base frame by using the transforms published by the tf service. This transformation is necessary to compute the distance between the goal and the object in a common reference frame, for use by the RL algorithm's reward function.
 
+![QR code based pose identification](QR-code-in-sawyer-gripper.png)
 
 During this pre-training phase, a QR code is attached to the outward facing surface of the object to enable detection of corners of the QR code. 
 The pose estimation script moves the robot arm to a location which is well within the sight of the fixed camera, located on top of Sawyer's head in this experiment, to estimate the X, Y, and Z coordinates of the corners of the QR code, in the camera frame. A calibrated ASUS XtionPRO LIVE RGB-D camera is used to estimate these coordinates.
@@ -43,6 +44,8 @@ NOTE: Invalid depth values are eliminated.
 ### Goal pose estimation
 
 As explained earlier, the pose of the goal is required as an observation during the training phase. It is also required during the testing phase of the RL algorithm as the policy execution is stopped when the observation of the object's pose following a policy action matches the pose of the goal specified in the testing phase.
+
+![Contour detection of hole on Shape sorting block](Contour.png)
 
 For estimation of goal poses, the RGB-D camera points towards the shape sorting block (goal) and identifies in the RGB image the vertices of the shape specified as the goal by using contour matching logic available in OpenCV.
 To assist with noise elimination due to lighting conditions and the pale color of the wood used in making the shape sorting block, a dark blue color paper was inserted below the shape sorting holes to assist in contour detection.

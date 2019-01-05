@@ -31,7 +31,6 @@ import message_filters
 from geometry_msgs.msg import PoseStamped
 from tf_conversions import posemath
 from geometry_msgs.msg import Point
-import calibrate as cb
 import math
 import tf2_ros
 from tf import transformations
@@ -298,36 +297,7 @@ class ObjPoseEstimator(object):
                 
                 f.write("]")
                 f.close()
-        
-    '''
-    def pcl_subscr(self, data):
-        
-        if len(self.verts_best) != self.n_verts:
-            return
-        
-        print("pcl_subscr: Best vertices populated!")
-        points_list = []
-        for p in pc2.read_points(data, skip_nans=True):
-            points_list.append([p[0], p[1], p[2], p[3]])
-            print p[0], p[1], p[2], p[3]
-        pcl_data = pcl.PointCloud_PointXYZRGB()
-        pcl_data.from_list(points_list)
-
-        for pd in pcl_data:
-            print pd
-        width = 640
-        for vert in self.verts_best:
-            x_pixel = vert[0]
-            y_pixel = vert[1]
-            Xc = pcl_data[width * y_pixel + x_pixel].x
-            Yc = pcl_data[width * y_pixel + x_pixel].y;
-            Zc = pcl_data[width * y_pixel + x_pixel].z;
-            Xr, Yr, Zr = transform_camera2robot(Xc, Yc, Zc)
-            print("Xr, Yr, Zr", Xr, Yr, Zr)                
-            if len(self.XYZ) != len(self.verts_best):
-                self.XYZ.append([Xr, Yr, Zr])
-    '''
-                
+                        
     def rgb_image_subscr(self, data):
         try:
             self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
@@ -475,10 +445,7 @@ def main():
 
         obs.dr_sub = rospy.Subscriber("/camera/depth_registered/image_raw",
                                       Image, obs.depth_registered_subscr)
-        '''
-        obs.pcl_sub = rospy.Subscriber("/camera/depth_registered/points",
-                                       PointCloud2, obs.pcl_subscr)
-        '''
+
         obs.ee_sub = rospy.Subscriber('/robot/limb/right/endpoint_state',
                                       EndpointState,
                                       obs.ee_pose,
