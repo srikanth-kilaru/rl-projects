@@ -79,7 +79,6 @@ class Agent(object):
         self.reward_to_go = config['reward_to_go']
         self.normalize_advantages = config['normalize_advantages']
         self.seed = config['seed']
-        self.nn_baseline = config['nn_baseline']
         self.n_layers = config['n_layers']
         self.size = config['size']
         self.ob_dim = config['goal_obs_dim'] + config['jnt_obs_dim']
@@ -95,7 +94,6 @@ class Agent(object):
         print("reward to go = ", self.reward_to_go)
         print("normalize advantages = ", self.normalize_advantages)
         print("seed = ", self.seed)
-        print("nn_baseline = ", self.nn_baseline)
         print("n_layers = ", self.n_layers)
         print("size = ", self.size)        
         print("max_path_length = ", self.max_path_length)
